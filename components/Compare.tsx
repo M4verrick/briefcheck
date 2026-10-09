@@ -1,0 +1,32 @@
+"use client";
+import { useState } from "react";
+import type { ComparisonInput } from "../lib/contracts";
+type SourceId = "brief" | "scope";
+type Upload = { busy?: boolean; file?: string; error?: string; previous?: string };
+const ACCEPT = ".pdf,.docx,.txt,.md,.markdown,.csv";
+export function Compare({ input, insertionErrors, onSourceChange, busy, stage, slow, editing, onInput, onCompare, onCancel, onExample, onSample, onCancelEditing }: { input: ComparisonInput; insertionErrors: { brief: string; scope: string }; onSourceChange: (id: "brief" | "scope", value: string) => void; busy: boolean; stage: string; slow: boolean; editing: boolean; onInput: (input: ComparisonInput) => void; onCompare: () => void; onCancel: () => void; onExample: () => void; onSample: () => void; onCancelEditing: () => void }) {
+  const [uploads, setUploads] = useState<Record<SourceId, Upload>>({ brief: {}, scope: {} });
+  const [dragging, setDragging] = useState<SourceId | null>(null);
+  const set = (id: SourceId, upload: Upload) => setUploads((previous) => ({ ...previous, [id]: upload }));
+  async function upload(id: SourceId, file: File | undefined) {
+    if (!file || uploads[id].busy) return;
+    set(id, { busy: true, file: file.name });
+    const body = new FormData(); body.append("file", file);
+    let result: { ok: boolean; text?: string; reason?: string };
+    try { result = await (await fetch("/api/extract", { method: "POST", body })).json(); }
+    catch { result = { ok: false, reason: "Upload failed. Check that the app is still running and try again." }; }
+    if (!result.ok || typeof result.text !== "string") { set(id, { file: file.name, error: result.reason ?? "This file could not be read." }); return; }
+    const previous = input[id];
+    onSourceChange(id, result.text);
+    set(id, { file: file.name, previous: previous.trim() ? previous : undefined });
+  }
+  const valid = input.brief.trim() && input.scope.trim() && input.brief.length <= 16000 && input.scope.length <= 16000 && !insertionErrors.brief && !insertionErrors.scope;
+  return <>
+    <section className="page-heading"><div><p className="eyebrow">{editing ? "Editing sources" : "New comparison"}</p><h1>Compare a client brief with your delivery plan</h1><p className="lede">BriefCheck finds commitments missing from the plan, conflicting dates and open questions, each backed by an exact quote. You decide what happens next.</p></div><div className="button-row heading-actions"><button onClick={onExample}>Use example texts</button><button onClick={onSample}>Explore sample review</button></div></section>
+    {editing && <div className="editing-banner" role="status"><strong>Editing sources — previous findings are inactive.</strong><p>Compare again to replace the analysis, or Cancel editing to restore the original sources, notes and decisions.</p></div>}
+    <div className="project-field"><label htmlFor="project-title">Project title <span className="muted">optional</span></label><input id="project-title" maxLength={80} value={input.project_title ?? ""} onChange={(e) => onInput({ ...input, project_title: e.target.value })} placeholder="A name for this comparison" /></div>
+    <div className="input-grid">{(["brief", "scope"] as const).map((id, index) => { const u = uploads[id]; const name = id === "brief" ? "Client brief" : "Proposed delivery plan"; return <section className={`input-panel${dragging === id ? " dragging" : ""}`} key={id} onDragOver={(e) => { if (busy || !e.dataTransfer.types.includes("Files")) return; e.preventDefault(); setDragging(id); }} onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(null); }} onDrop={(e) => { e.preventDefault(); setDragging(null); if (!busy) void upload(id, e.dataTransfer.files[0]); }}><div className="panel-heading"><div><span className="document-number">0{index + 1}</span><label htmlFor={id}>{name}</label><label className={`upload-button${u.busy || busy ? " disabled" : ""}`}><input type="file" accept={ACCEPT} disabled={u.busy || busy} aria-label={`Upload a file for ${name}`} onChange={(e) => { void upload(id, e.target.files?.[0]); e.target.value = ""; }} />{u.busy ? "Reading…" : "Upload file"}</label></div><span className="muted">{id === "brief" ? "What they asked for" : "Your delivery commitments"}</span></div><textarea id={id} value={input[id]} onChange={(e) => { onSourceChange(id, e.target.value); if (u.file && !u.busy) set(id, {}); }} aria-invalid={!!insertionErrors[id]} placeholder={id === "brief" ? "Paste the client’s goals, requirements and constraints, or drop a file here…" : "Paste your deliverables, timeline, dependencies and exclusions, or drop a file here…"} aria-describedby={`${id}-count${insertionErrors[id] ? ` ${id}-limit-warning` : ""}`} />{insertionErrors[id] && <p id={`${id}-limit-warning`} className="input-limit-error" role="alert">{insertionErrors[id]}</p>}{u.error && <p className="input-limit-error" role="alert"><strong>{u.file} was rejected.</strong> {u.error} Your text is unchanged.</p>}{!u.error && !u.busy && u.file && <p className="upload-note" role="status">Loaded text from <strong>{u.file}</strong>. Check it reads correctly before comparing.{u.previous !== undefined && <> <button className="text-button" onClick={() => { onSourceChange(id, u.previous!); set(id, {}); }}>Undo</button></>}</p>}<div className="panel-footer"><span>Paste text or upload PDF, DOCX, TXT, MD, CSV · up to 10 MB</span><span id={`${id}-count`}>{input[id].length.toLocaleString()} / 16,000</span></div></section>; })}</div>
+    <div className="compare-actions"><div className="privacy-copy"><span className="privacy-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 1.5 3 3.5v4c0 3.2 2.1 5.6 5 7 2.9-1.4 5-3.8 5-7v-4z" /></svg></span><p><strong>Data handling.</strong> Compare sends both documents to an AI service for analysis, which may retain them under its own policy. Your project title and review notes stay in this browser.</p></div><div className="button-row">{editing && <button onClick={onCancelEditing}>Cancel editing</button>}<button className="primary" disabled={!valid || busy} onClick={onCompare}>Compare documents <span aria-hidden="true">→</span></button></div></div>
+    {busy && <div className="status-bar" role="status"><span className="spinner" aria-hidden="true" /><div><strong>{stage === "checking" ? "Checking evidence…" : "Comparing your documents…"}</strong>{slow && <p>Still working. You can cancel this attempt.</p>}</div><button onClick={onCancel}>Cancel comparison</button></div>}
+  </>;
+}

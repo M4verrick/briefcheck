@@ -19,7 +19,31 @@ describe("frozen deterministic report", () => {
     expect(md).toContain("### Title - injected 1. num --- code\n");
     expect(md).toContain("````text\nHoney & Rye <5_000> ``` (USD)\n````");
     expect(md).toContain("line\n\\---\n\\+ plus\n2\\) two\nindented\n\\> quoted");
-    expect(md).not.toMatch(/^(- |1\. |---$| {4})/m);
+    // The agenda intentionally adds a numbered list; untrusted detail fields cannot.
+    expect(md.split("## Decisions still needed")[1]).not.toMatch(/^(- |1\. |---$| {4})/m);
   });
   it("does not export not-comparable as a normal comparison", async () => { const { analysis, reviews } = await reportFixture(); analysis.status = "not_comparable"; expect(() => buildReport(analysis, reviews, { include_dismissed: false, review_revision: 0 })).toThrow(); });
+});
+
+it("keeps card, agenda and export order consistent without rearranging canonical evidence", async () => {
+  const { sampleAnalysis } = await import("../lib/sample");
+  const { orderedFindings } = await import("../lib/findings");
+  const analysis = await sampleAnalysis();
+  const original = structuredClone(analysis);
+  const reviews = analysis.findings.map((f) => ({ finding_id: f.id, disposition: "open" as const, note: `Note for ${f.id}` })).reverse();
+  const report = buildReport(analysis, reviews, { include_dismissed: false, review_revision: 0 });
+  const ordered = orderedFindings(analysis.findings);
+  expect(report.reviews.map((r) => r.finding_id)).toEqual(ordered.map((f) => f.id));
+  const markdown = toMarkdown(report);
+  expect(markdown).toContain("## Clarification agenda");
+  for (const [index, finding] of ordered.entries()) {
+    expect(markdown).toContain(`${index + 1}. ${finding.question}`);
+    expect(markdown).toContain(`Note for ${finding.id}`);
+    for (const evidence of finding.evidence) {
+      expect(markdown).toContain(evidence.quote);
+      expect(markdown).toContain(evidence.label);
+    }
+    if (index) expect(markdown.indexOf(`### ${ordered[index - 1].title}`)).toBeLessThan(markdown.indexOf(`### ${finding.title}`));
+  }
+  expect(analysis).toEqual(original);
 });

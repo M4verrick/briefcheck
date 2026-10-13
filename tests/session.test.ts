@@ -18,3 +18,11 @@ describe("session identities and local review", () => {
   it("Reopen retains the recorded note", async () => { const { s, analysis } = await ready(); const decided = transition(s, { type: "REVIEW", finding_id: analysis.findings[0].id, disposition: "decision_recorded", note: "User reports date agreed" }); const reopened = transition(decided, { type: "REVIEW", finding_id: analysis.findings[0].id, disposition: "open", note: decided.reviews[0].note }); expect(reopened.reviews[0]).toMatchObject({ disposition: "open", note: "User reports date agreed" }); });
   it("bounds saved and draft notes and never changes AI claims", async () => { const { s, analysis } = await ready(); expect(transition(s, { type: "REVIEW", finding_id: analysis.findings[0].id, disposition: "open", note: "x".repeat(601) })).toBe(s); const next = transition(s, { type: "DRAFT", finding_id: analysis.findings[0].id, note: "Changed draft" }); expect(next.analysis).toBe(analysis); expect(next.revision).toBe(s.revision + 1); });
 });
+
+it("new runs reset review by identity even when positions and finding IDs repeat", async () => {
+  const { s, analysis } = await ready();
+  const edited = transition(s, { type: "REVIEW", finding_id: analysis.findings[0].id, disposition: "dismissed", note: "Only for the previous run" });
+  const replacement = transition(edited, { type: "SAMPLE", analysis: { ...analysis, analysis_id: "new-run" } });
+  expect(replacement.reviews).toEqual([{ finding_id: analysis.findings[0].id, disposition: "open", note: "" }]);
+  expect(Object.values(replacement.drafts)).toEqual([""]);
+});

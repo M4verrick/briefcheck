@@ -57,3 +57,38 @@ h1,h2,h3{text-wrap:balance}p{text-wrap:pretty}
 @media print{.report-state{padding:0;background:none!important}.report-stats{border-color:#ccc}.report-stats>div+div{border-color:#ccc}}
 .workflow-nav button{display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
 @media(max-width:759px){.workflow-nav button{padding:8px 6px;font-size:13px}.workflow-nav button span{width:18px;height:18px;margin-right:5px}.heading-actions{flex-direction:column;align-items:stretch}.heading-actions button{width:100%}}
+
+/* Review follows the evidence, then the question and the human outcome. */
+.review-guide{max-width:760px;color:var(--muted);font-size:14px;margin:-4px 0 24px}
+.finding-position{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:20px;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+.finding-position a{padding:8px 0;font-weight:600}
+.finding-detail h2:focus{outline:none}
+.finding-detail h2:focus-visible{outline:3px solid var(--teal);outline-offset:5px}
+.finding-detail h2,.citation,#review-note,.report-item{scroll-margin-top:88px}
+.evidence-hint{color:var(--muted);font-size:13px;margin:0 0 12px}
+.finding-pagination{display:flex;justify-content:space-between;gap:12px;border-top:1px solid var(--line-soft);margin-top:24px;padding-top:20px}
+.finding-pagination button{font-size:13px}
+.source-panel{top:88px}.source-return{display:block;margin:0 16px 16px;font-size:13px}
+.heading-actions{flex-wrap:wrap;max-width:380px;justify-content:flex-end}
+.sample-hint{flex-basis:100%;font-size:12px;font-weight:400;color:var(--muted);text-align:right}
+.report-agenda{margin-top:28px;padding:24px;background:var(--sunken);border-radius:6px}
+.report-agenda h2{font-size:22px;margin-bottom:10px}.report-agenda>p{font-size:14px}
+.report-agenda ol{margin:16px 0 0;padding-left:24px}.report-agenda li{padding-left:4px;margin-top:12px}
+.report-agenda a{font-weight:600;text-underline-offset:3px}
+@media(max-width:759px){
+  .review-guide{margin:0 0 20px}.finding-position{margin-bottom:12px}
+  .finding-card{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .finding-card .status-pill{margin:0;flex-shrink:0;max-width:100px}
+  .finding-detail h2,.citation,#review-note,.report-item{scroll-margin-top:140px}
+  .finding-pagination button{padding:10px;font-size:12px;flex:1}
+  .heading-actions{max-width:none}.sample-hint{text-align:left}
+  .panel-heading>div{flex-wrap:wrap}.panel-heading label{min-width:0}.document-number{flex-shrink:0}
+  .report-agenda{padding:18px}.report-agenda h2{font-size:20px}
+}
+@media print{
+  .report-item{break-inside:auto}.report-item h3,.report-subhead,.report-question{break-after:avoid}
+  .report-item blockquote{break-inside:auto}.report-item blockquote p{orphans:3;widows:3}
+  .report-item blockquote .citation{break-after:avoid;display:block}
+  .report-agenda{background:none;padding:0;border-radius:0}.report-agenda h2{break-after:avoid;font-size:17pt}
+  .report-agenda li{break-inside:avoid}.report-agenda a{text-decoration:none;color:inherit}
+}

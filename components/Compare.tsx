@@ -1,20 +1,24 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ComparisonInput } from "../lib/contracts";
+import type { UploadGuard } from "../lib/session";
 type SourceId = "brief" | "scope";
 type Upload = { busy?: boolean; file?: string; error?: string; previous?: string };
 const ACCEPT = ".pdf,.docx,.txt,.md,.markdown,.csv";
-export function Compare({ input, insertionErrors, onSourceChange, busy, stage, slow, editing, onInput, onCompare, onCancel, onExample, onSample, onCancelEditing }: { input: ComparisonInput; insertionErrors: { brief: string; scope: string }; onSourceChange: (id: "brief" | "scope", value: string) => void; busy: boolean; stage: string; slow: boolean; editing: boolean; onInput: (input: ComparisonInput) => void; onCompare: () => void; onCancel: () => void; onExample: () => void; onSample: () => void; onCancelEditing: () => void }) {
+export function Compare({ input, uploadGuard, insertionErrors, onSourceChange, busy, stage, slow, editing, onInput, onCompare, onCancel, onExample, onSample, onCancelEditing }: { input: ComparisonInput; uploadGuard: UploadGuard; insertionErrors: { brief: string; scope: string }; onSourceChange: (id: "brief" | "scope", value: string) => void; busy: boolean; stage: string; slow: boolean; editing: boolean; onInput: (input: ComparisonInput) => void; onCompare: () => void; onCancel: () => void; onExample: () => void; onSample: () => void; onCancelEditing: () => void }) {
   const [uploads, setUploads] = useState<Record<SourceId, Upload>>({ brief: {}, scope: {} });
   const [dragging, setDragging] = useState<SourceId | null>(null);
+  useEffect(() => () => uploadGuard.cancel(), [uploadGuard]);
   const set = (id: SourceId, upload: Upload) => setUploads((previous) => ({ ...previous, [id]: upload }));
   async function upload(id: SourceId, file: File | undefined) {
     if (!file || uploads[id].busy) return;
+    const isCurrent = uploadGuard.begin(id);
     set(id, { busy: true, file: file.name });
     const body = new FormData(); body.append("file", file);
     let result: { ok: boolean; text?: string; reason?: string };
     try { result = await (await fetch("/api/extract", { method: "POST", body })).json(); }
     catch { result = { ok: false, reason: "Upload failed. Check that the app is still running and try again." }; }
+    if (!isCurrent()) { set(id, {}); return; }
     if (!result.ok || typeof result.text !== "string") { set(id, { file: file.name, error: result.reason ?? "This file could not be read." }); return; }
     const previous = input[id];
     onSourceChange(id, result.text);

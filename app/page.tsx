@@ -8,20 +8,27 @@ import { makeSnapshot } from "../lib/evidence";
 import { restoreDraft, saveDraft, verifyAnalysis } from "../lib/recovery";
 import { buildReport, type ReportDocument } from "../lib/report";
 import { SAMPLE_INPUT, sampleAnalysis } from "../lib/sample";
-import { hasUnsavedNotes, initialState, transition } from "../lib/session";
+import { createUploadGuard, hasUnsavedNotes, initialState, transition } from "../lib/session";
 type View = "compare" | "review" | "report";
 export default function Page() {
   const [state, dispatch] = useReducer(transition, undefined, () => initialState()); const current = useRef(state); current.current = state;
   const [selectedFinding, setSelectedFinding] = useState(""); const [view, setView] = useState<View>("compare"); const [report, setReport] = useState<ReportDocument | null>(null); const [initialized, setInitialized] = useState(false); const [notice, setNotice] = useState(""); const [stage, setStage] = useState("comparing"); const [slow, setSlow] = useState(false); const [preparing, setPreparing] = useState(false);
   const inflight = useRef<AbortController | null>(null); const [modal, setModal] = useState<{ kind: "clear" | "sample" | "example" } | null>(null); const dialog = useRef<HTMLDivElement>(null); const modalOpener = useRef<HTMLElement | null>(null);
   const [insertionErrors, setInsertionErrors] = useState({ brief: "", scope: "" });
+  const [uploadGuard] = useState(createUploadGuard);
   useEffect(() => { let alive = true; (async () => { let restored; try { restored = await restoreDraft(window.sessionStorage); } catch { restored = error("storage_unavailable"); } if (!alive) return; if (isError(restored)) setNotice(restored.message); else if (restored) { dispatch({ type: "RESTORE", restored }); if (restored.analysis) setView("review"); } setInitialized(true); })(); return () => { alive = false; }; }, []);
   useEffect(() => { if (!initialized) return; try { const result = saveDraft(state, window.sessionStorage); if (!result.ok) setNotice(result.error.message); else if (state.recoveryOptIn) setNotice(""); } catch { setNotice(error("storage_unavailable").message); } }, [state, initialized]);
   useEffect(() => { setSlow(false); if (state.phase !== "loading") return; const timer = setTimeout(() => setSlow(true), 15_000); return () => clearTimeout(timer); }, [state.phase, state.attempt?.id]);
   useEffect(() => () => inflight.current?.abort(), []);
   useEffect(() => { if (!modal) return; modalOpener.current = document.activeElement as HTMLElement; const box = dialog.current; box?.querySelector<HTMLButtonElement>("button")?.focus(); const handler = (e: KeyboardEvent) => { if (e.key === "Escape") { setModal(null); return; } if (e.key !== "Tab") return; const buttons = Array.from(box?.querySelectorAll<HTMLButtonElement>("button") ?? []); const first = buttons[0]; const last = buttons.at(-1); if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); } }; document.addEventListener("keydown", handler); return () => { document.removeEventListener("keydown", handler); modalOpener.current?.focus(); }; }, [modal]);
-  function inputChanged(input: ComparisonInput) { inflight.current?.abort(); inflight.current = null; setPreparing(false); dispatch({ type: "INPUT", input }); }
+  function inputChanged(input: ComparisonInput) {
+    inflight.current?.abort(); inflight.current = null; setPreparing(false);
+    const event = { type: "INPUT", input } as const;
+    current.current = transition(current.current, event);
+    dispatch(event);
+  }
   function sourceChanged(id: "brief" | "scope", value: string) {
+    uploadGuard.cancel(id);
     if (value.length > LIMITS.source) {
       const label = id === "brief" ? "Client brief" : "Proposed delivery plan";
       setInsertionErrors((previous) => ({ ...previous, [id]: `${label} insertion was rejected because it exceeds 16,000 characters. Previous text is unchanged. Shorten the text and try again.` }));
@@ -32,6 +39,7 @@ export default function Page() {
   }
   async function compare() {
     if (!initialized || inflight.current || current.current.phase === "loading" || insertionErrors.brief || insertionErrors.scope) return;
+    uploadGuard.cancel();
     const controller = new AbortController(); inflight.current = controller; setPreparing(true); const before = current.current; let sources;
     try { sources = await makeSnapshot(before.input); } catch { inflight.current = null; setPreparing(false); return; }
     if (controller.signal.aborted || current.current.generation !== before.generation) return;
@@ -54,6 +62,7 @@ export default function Page() {
   }
   function cancel() { inflight.current?.abort(); inflight.current = null; setPreparing(false); dispatch({ type: "CANCEL" }); }
   async function perform(kind: "clear" | "sample" | "example") {
+    uploadGuard.cancel();
     setModal(null); inflight.current?.abort(); inflight.current = null; setReport(null); setNotice("");
     setInsertionErrors({ brief: "", scope: "" });
     if (kind === "clear") { dispatch({ type: "CLEAR" }); setView("compare"); }
@@ -63,6 +72,7 @@ export default function Page() {
   function request(kind: "clear" | "sample" | "example") { if (state.input.brief || state.input.scope || state.analysis) setModal({ kind }); else void perform(kind); }
   function refresh(include_dismissed = report?.options.include_dismissed ?? false) { if (!state.analysis || hasUnsavedNotes(state) || state.analysis.status === "not_comparable") return; setReport(buildReport(state.analysis, state.reviews, { include_dismissed, review_revision: state.revision })); setView("report"); }
   function beginEditing() {
+    uploadGuard.cancel();
     inflight.current?.abort(); inflight.current = null; setPreparing(false);
     setInsertionErrors({ brief: "", scope: "" });
     if (current.current.analysis) dispatch({ type: "EDIT" });
@@ -76,7 +86,7 @@ export default function Page() {
     {state.recovered && <p className="recovered no-print"><strong>Recovered local draft</strong> · No new analysis request was made.</p>}
     {notice && <div className="error-box no-print" role="alert">{notice}</div>}
     {state.error && <div className="error-box no-print" role="alert"><div><strong>{state.error.message}</strong><p>No findings were accepted from this attempt.</p></div>{state.input.brief.trim() && state.input.scope.trim() && <button disabled={!!insertionErrors.brief || !!insertionErrors.scope || preparing || state.phase === "loading"} onClick={compare}>Retry comparison</button>}</div>}
-    {view === "compare" && <Compare input={state.input} insertionErrors={insertionErrors} onSourceChange={sourceChanged} busy={state.phase === "loading" || preparing || !initialized} stage={stage} slow={slow} editing={!!state.backup} onInput={inputChanged} onCompare={compare} onCancel={cancel} onExample={() => request("example")} onSample={() => request("sample")} onCancelEditing={() => { setInsertionErrors({ brief: "", scope: "" }); dispatch({ type: "CANCEL_EDIT" }); setView("review"); }} />}
+    {view === "compare" && <Compare input={state.input} uploadGuard={uploadGuard} insertionErrors={insertionErrors} onSourceChange={sourceChanged} busy={state.phase === "loading" || preparing || !initialized} stage={stage} slow={slow} editing={!!state.backup} onInput={inputChanged} onCompare={compare} onCancel={cancel} onExample={() => request("example")} onSample={() => request("sample")} onCancelEditing={() => { uploadGuard.cancel(); setInsertionErrors({ brief: "", scope: "" }); dispatch({ type: "CANCEL_EDIT" }); setView("review"); }} />}
     {view === "review" && state.analysis && <Review key={state.analysis.analysis_id} selected={selectedFinding} onSelect={setSelectedFinding} state={state} dispatch={dispatch} onEdit={beginEditing} onReport={() => refresh(false)} />}
     {view === "report" && report && <Report report={report} outdated={outdated} unsaved={unsaved} onRefresh={refresh} />}
     </main>

@@ -1,4 +1,4 @@
-import { error, LIMITS, type AnalysisError, type ComparisonInput, type Disposition, type ReviewRecord, type ValidatedAnalysis } from "./contracts.ts";
+import { error, LIMITS, type AnalysisError, type ComparisonInput, type Disposition, type ReviewRecord, type SourceId, type ValidatedAnalysis } from "./contracts.ts";
 export type Attempt = { id: string; generation: number; snapshot_id: string };
 export type SessionState = { generation: number; input: ComparisonInput; phase: "compare" | "loading" | "review"; analysis: ValidatedAnalysis | null; reviews: ReviewRecord[]; drafts: Record<string, string>; revision: number; attempt: Attempt | null; error: AnalysisError | null; recoveryOptIn: boolean; recovered: boolean; backup: Pick<SessionState, "input" | "analysis" | "reviews" | "drafts" | "revision"> | null };
 export type SessionEvent = { type: "INPUT"; input: ComparisonInput } | { type: "START"; attempt: Attempt } | { type: "RESULT"; attempt: Attempt; analysis: ValidatedAnalysis } | { type: "ERROR"; attempt: Attempt; error: AnalysisError } | { type: "CANCEL" } | { type: "CLEAR" } | { type: "EDIT" } | { type: "CANCEL_EDIT" } | { type: "DRAFT"; finding_id: string; note: string } | { type: "REVIEW"; finding_id: string; disposition: Disposition; note: string } | { type: "RECOVERY"; enabled: boolean } | { type: "RESTORE"; restored: Pick<SessionState, "input" | "analysis" | "reviews" | "drafts" | "revision"> } | { type: "SAMPLE"; analysis: ValidatedAnalysis };
@@ -26,3 +26,11 @@ export function transition(state: SessionState, event: SessionEvent): SessionSta
   }
 }
 export function hasUnsavedNotes(state: SessionState) { return state.reviews.some((r) => (state.drafts[r.finding_id] ?? r.note) !== r.note); }
+export function createUploadGuard() {
+  const versions = { brief: 0, scope: 0 };
+  return {
+    begin(id: SourceId) { const version = ++versions[id]; return () => versions[id] === version; },
+    cancel(id?: SourceId) { for (const source of id ? [id] : ["brief", "scope"] as const) versions[source]++; },
+  };
+}
+export type UploadGuard = ReturnType<typeof createUploadGuard>;

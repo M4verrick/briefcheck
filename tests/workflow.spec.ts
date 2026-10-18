@@ -97,3 +97,29 @@ test("uploaded documents fill a source, rejected files leave it unchanged, and u
   await page.getByLabel("Upload a file for Proposed delivery plan").setInputFiles({ name: "plan.md", mimeType: "text/markdown", buffer: Buffer.from("Email signup.") });
   await expect(page.locator("#scope")).toHaveValue("Email signup."); await page.getByRole("button", { name: "Undo" }).click(); await expect(page.locator("#scope")).toHaveValue("My own plan");
 });
+
+test("a delayed upload preserves source text typed while extraction waits", async ({ page }) => {
+  let release!: () => void; const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/extract", async (route) => { await held; await route.fulfill({ json: { ok: true, text: "Old uploaded brief" } }); });
+  await page.goto("/");
+  await page.getByLabel("Upload a file for Client brief").setInputFiles({ name: "brief.txt", mimeType: "text/plain", buffer: Buffer.from("Synthetic uploaded brief") });
+  await expect(page.getByText("Reading…", { exact: true })).toBeVisible();
+  await page.locator("#brief").fill("Newer typed brief"); release();
+  await expect(page.getByText("Reading…", { exact: true })).toHaveCount(0);
+  await expect(page.locator("#brief")).toHaveValue("Newer typed brief");
+});
+
+test("a delayed upload cannot reset a newer sample review or its saved note", async ({ page }) => {
+  let release!: () => void; const held = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/extract", async (route) => { await held; await route.fulfill({ json: { ok: true, text: "Old uploaded brief" } }); });
+  await page.goto("/");
+  await page.getByLabel("Upload a file for Client brief").setInputFiles({ name: "brief.txt", mimeType: "text/plain", buffer: Buffer.from("Synthetic uploaded brief") });
+  await expect(page.getByText("Reading…", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Explore sample review" }).click();
+  await expect(page.getByRole("heading", { name: "Honey & Rye · campaign delivery plan", level: 1 })).toBeVisible();
+  await page.getByLabel("Your review note").fill("Keep the newer review note"); await page.getByRole("button", { name: "Save Open note" }).click();
+  const response = page.waitForResponse((reply) => reply.url().endsWith("/api/extract")); release(); await (await response).finished();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(page.getByRole("heading", { name: "Honey & Rye · campaign delivery plan", level: 1 })).toBeVisible();
+  await expect(page.getByLabel("Your review note")).toHaveValue("Keep the newer review note");
+});
